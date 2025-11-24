@@ -1,10 +1,70 @@
 # backend/ai/pipeline.py
-from .stt import STTEngine  # placeholder STT engine (Whisper Tiny/Small later)
+
+"""
+Full AI pipeline: STT → Intent → LLM → TTS.
+"""
+
+import asyncio
+from .stt import STTEngine
 from .intents import parse_intent
 from .llm import generate_response
-from .tts import text_to_speech
+from .tts import _tts_engine
 from .responses import get_template_response
-import asyncio
+
+
+# --- Updated parse_intent to handle all demo intents ---
+def parse_intent(text: str):
+    slots = {}
+    text_lower = text.lower()
+
+    if "transfer" in text_lower:
+        intent = "transfer"
+        # crude slot extraction
+        words = text.split()
+        try:
+            amount_index = words.index("transfer") + 1
+            to_index = words.index("to")
+            slots["amount"] = int(words[amount_index])
+            slots["recipient"] = words[to_index + 1]
+        except (ValueError, IndexError):
+            slots["amount"] = 0
+            slots["recipient"] = ""
+    elif "set language" in text_lower:
+        intent = "set_language"
+        slots["language"] = words[-1].lower()
+    elif "my name is" in text_lower:
+        intent = "provide_name"
+        slots["user_name"] = words[-1]
+    elif "my gender is" in text_lower:
+        intent = "provide_gender"
+        slots["gender"] = words[-1]
+    elif "my phone is" in text_lower:
+        intent = "provide_phone"
+        slots["phone"] = words[-1]
+    elif "confirm" in text_lower:
+        intent = "confirm"
+    elif "cancel" in text_lower:
+        intent = "cancel"
+    else:
+        intent = "onboarding"
+
+    return intent, slots
+
+
+# --- Updated generate_response to return templates for demo intents ---
+def generate_response(context, intent, slots):
+    templates = {
+        "onboarding": "Welcome to BlindTrust. Please tell me your name.",
+        "set_language": f"Language set to {slots.get('language', 'English')}.",
+        "provide_name": f"Hello {slots.get('user_name', 'user')}!",
+        "provide_gender": f"Gender {slots.get('gender', 'unspecified')} recorded.",
+        "provide_phone": f"Phone {slots.get('phone', 'unspecified')} recorded.",
+        "transfer": f"Transfer of {slots.get('amount', 0)} to {slots.get('recipient', 'unknown')} successful.",
+        "confirm": "Action confirmed.",
+        "cancel": "Operation canceled."
+    }
+    return templates.get(intent)
+
 
 async def process_audio(input_audio: str):
     """
@@ -16,26 +76,26 @@ async def process_audio(input_audio: str):
         "text": "Processed text",
         "intent": "detected_intent",
         "slots": { ... },
+        "response_text": "Generated response",
         "audio_file": "output.mp3"
     }
     """
     # --- Step 1: Convert audio to text ---
-    # For now, input_audio is already text
     stt_engine = STTEngine()
-    # Later integration: text = await stt_engine.audio_to_text(input_audio)
-    text = input_audio  # placeholder for demo
+    text = input_audio  # placeholder: already text
 
-    # --- Step 2: Detect intent and extract arguments ---
+    # --- Step 2: Detect intent and extract slots ---
     intent, slots = parse_intent(text)
 
     # --- Step 3: Generate response text ---
-    # Try LLM first, fallback to template messages
     response_text = generate_response(context=text, intent=intent, slots=slots)
     if not response_text:
         response_text = get_template_response(intent, slots)
 
-    # --- Step 4: Convert text to speech ---
-    audio_file = text_to_speech(response_text, language_code=slots.get("language", "en"))
+    # --- Step 4: Convert text to speech (await async TTS) ---
+    audio_file = await _tts_engine.text_to_speech(
+        response_text, language_code=slots.get("language", "en")
+    )
 
     return {
         "text": text,
@@ -45,39 +105,35 @@ async def process_audio(input_audio: str):
         "audio_file": audio_file
     }
 
-# Helper to call async function from sync code (e.g., FastAPI endpoint)
+
 def process_audio_sync(input_audio: str):
+    """
+    Sync wrapper for the async process_audio function.
+    Useful for FastAPI endpoints.
+    """
     return asyncio.run(process_audio(input_audio))
 
 
 class AIPipeline:
     """
-    Wrapper class for BlindTrust AI engine.
-    Use this to process audio/text in a single object-oriented call.
+    Object-oriented wrapper for BlindTrust AI engine.
     """
 
     def __init__(self):
         self.stt_engine = STTEngine()
-        # Future integrations: self.llm, self.tts, self.intent_parser, etc.
+        # Future: self.llm, self.tts, self.intent_parser, etc.
 
     async def process(self, input_audio: str) -> dict:
-        """
-        Async method to process input audio/text and return structured response.
-        """
-        # Step 1: Convert audio to text
-        # text = await self.stt_engine.audio_to_text(input_audio)
-        text = input_audio  # placeholder for demo
-
-        # Step 2: Detect intent and slots
+        text = input_audio  # placeholder
         intent, slots = parse_intent(text)
 
-        # Step 3: Generate response text
         response_text = generate_response(context=text, intent=intent, slots=slots)
         if not response_text:
             response_text = get_template_response(intent, slots)
 
-        # Step 4: Convert text to speech
-        audio_file = text_to_speech(response_text, language_code=slots.get("language", "en"))
+        audio_file = await _tts_engine.text_to_speech(
+            response_text, language_code=slots.get("language", "en")
+        )
 
         return {
             "text": text,
@@ -88,7 +144,4 @@ class AIPipeline:
         }
 
     def process_sync(self, input_audio: str) -> dict:
-        """
-        Sync wrapper for the async process method.
-        """
         return asyncio.run(self.process(input_audio))

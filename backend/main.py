@@ -12,6 +12,7 @@ from backend.routes import user as user_router
 from backend.routes import accounts as accounts_router
 from backend.routes import beneficiaries as beneficiaries_router
 from backend.routes import ai as ai_router
+from backend.routes.demo import router as demo_router #delete later..................................................
 
 app = FastAPI(title="BlindTrust Demo API")
 
@@ -32,6 +33,8 @@ app.include_router(user_router.router)
 app.include_router(accounts_router.router)
 app.include_router(beneficiaries_router.router)
 app.include_router(ai_router.router)
+app.include_router(demo_router)  #delete later..................................................
+
 
 @app.get("/")
 def health():
