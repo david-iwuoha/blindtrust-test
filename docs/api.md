@@ -19,3 +19,5 @@
 
 ## AI
 - /ai/process
+
+uvicorn backend.main:app --reload --port 8001
