@@ -1,24 +1,25 @@
 # backend/ai/intents.py
 
 """
-Intent and slot extraction for BlindTrust.
-Handles onboarding, language selection, transfers, confirmations, etc.
+NLU / Intent Parser for BlindTrust demo.
+
+Extracts intents and slots from raw transcribed speech.
+Supports:
+- onboarding
+- set_language
+- provide_name
+- provide_gender
+- provide_phone
+- transfer
+- amount
+- confirm
+- cancel
 """
 
 import re
 
-# Unified INTENTS list
-INTENTS = [
-    "onboarding",
-    "set_language",
-    "provide_name",
-    "provide_gender",
-    "provide_phone",
-    "transfer",
-    "amount",
-    "confirm",
-    "cancel",
-]
+# List of supported languages for TTS/STT
+LANGUAGES = ["english", "igbo", "yoruba", "hausa"]
 
 
 class IntentResult:
@@ -28,56 +29,57 @@ class IntentResult:
 
 
 class IntentParser:
-    """Rule-based intent extraction (placeholder) for demo purposes."""
+    """Rule-based intent extraction for BlindTrust demo."""
 
     def parse(self, text: str) -> IntentResult:
         text_lower = text.lower()
+        slots = {}
 
-        # ===== language selection =====
-        if any(lang in text_lower for lang in ["english", "igbo", "yoruba", "hausa"]):
-            return IntentResult("set_language", {"language": text_lower})
+        # --- Language selection ---
+        for lang in LANGUAGES:
+            if lang in text_lower:
+                return IntentResult("set_language", {"language": lang})
 
-        # ===== provide name =====
-        if "my name is" in text_lower:
-            name_match = re.search(r"my name is (\w+)", text_lower)
-            name = name_match.group(1) if name_match else "user"
-            return IntentResult("provide_name", {"user_name": name})
+        # --- Onboarding / profile info ---
+        if "my name is" in text_lower or "i am" in text_lower:
+            m = re.search(r"(?:my name is|i am) (\w+)", text_lower)
+            if m:
+                slots["user_name"] = m.group(1).capitalize()
+            return IntentResult("provide_name", slots)
 
-        # ===== provide gender =====
-        if any(g in text_lower for g in ["male", "female"]):
-            gender = "male" if "male" in text_lower else "female"
-            return IntentResult("provide_gender", {"gender": gender})
+        if "male" in text_lower or "female" in text_lower:
+            slots["gender"] = "male" if "male" in text_lower else "female"
+            return IntentResult("provide_gender", slots)
 
-        # ===== provide phone =====
-        if "phone" in text_lower or re.search(r"\d{10,}", text_lower):
-            phone_match = re.search(r"(\d{10,})", text_lower)
-            phone = phone_match.group(1) if phone_match else None
-            return IntentResult("provide_phone", {"phone": phone})
+        if re.search(r"\d{10}", text_lower):
+            m = re.search(r"(\d{10})", text_lower)
+            if m:
+                slots["phone"] = m.group(1)
+            return IntentResult("provide_phone", slots)
 
-        # ===== transfer =====
-        if "transfer" in text_lower:
-            # extract amount
-            amount_match = re.search(r"transfer (\d+)", text_lower)
-            amount = int(amount_match.group(1)) if amount_match else 0
+        # --- Transfer / amount ---
+        if "transfer" in text_lower or "send" in text_lower:
+            m_recipient = re.search(r"(?:to )(\w+)", text_lower)
+            if m_recipient:
+                slots["recipient"] = m_recipient.group(1).capitalize()
+            m_amount = re.search(r"\b(\d{1,7})\b", text_lower)
+            if m_amount:
+                slots["amount"] = int(m_amount.group(1))
+            return IntentResult("transfer", slots)
 
-            # extract recipient
-            recipient_match = re.search(r"to (\w+)", text_lower)
-            recipient = recipient_match.group(1) if recipient_match else ""
-
-            return IntentResult("transfer", {"amount": amount, "recipient": recipient})
-
-        # ===== confirmations =====
-        if "yes" in text_lower:
+        # --- Confirm / cancel ---
+        if "yes" in text_lower or "confirm" in text_lower:
             return IntentResult("confirm")
-        if "no" in text_lower:
+        if "no" in text_lower or "cancel" in text_lower:
             return IntentResult("cancel")
 
-        # ===== default fallback =====
-        return IntentResult("onboarding")
+        # --- Fallback ---
+        return IntentResult("unknown")
 
 
-# Wrapper (pipeline.py depends on this)
+# Wrapper for backward compatibility (pipeline.py depends on this)
 def parse_intent(text: str):
     parser = IntentParser()
     result = parser.parse(text)
-    return result.intent, result.slots
+    # Return a dict for tests expecting result["intent"]
+    return {"intent": result.intent, "slots": result.slots}

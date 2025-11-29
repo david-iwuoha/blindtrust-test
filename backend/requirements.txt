@@ -6,6 +6,11 @@ inflect==6.0.4
 python-dotenv==1.0.0
 pytest==7.4.0
 httpx==0.24.0
-vosk
-# SQLite is builtin; no extra package needed
-# LLM / STT libs will be added when integrating models
+
+# Whisper and dependencies
+openai-whisper==20231117
+torch==2.2.0
+torchaudio==2.2.0
+
+# FFmpeg helper (you still need ffmpeg installed in system)
+ffmpeg-python==0.2.0

@@ -1,9 +1,12 @@
+# backend/ai/stt.py
+
 """
-Real STT module using Vosk (offline) with a backward-compatible wrapper
+Real STT module using Whisper (OpenAI) with a backward-compatible wrapper
 so the rest of your backend will not crash.
 
 Usage (new):
     from backend.ai.stt import audio_to_text
+    text = audio_to_text("path/to/file.wav")
 
 Usage (old, still supported):
     stt = STTEngine()
@@ -11,49 +14,49 @@ Usage (old, still supported):
 """
 
 import os
-import wave
-import json
 import tempfile
 import traceback
+from typing import Optional
 
+# Whisper is CPU-friendly but models still take RAM/disk.
 try:
-    from vosk import Model, KaldiRecognizer
+    import whisper
 except ImportError:
-    Model = None
-    KaldiRecognizer = None
+    whisper = None
 
 # ---- Config ----
-DEFAULT_MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "backend/ai/vosk-model")
+DEFAULT_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")  # "tiny" | "small" | "base" | ...
 _MODEL = None
-
+_MODEL_SIZE = None
 
 # -------------------------
 #   Internal helpers
 # -------------------------
-def _load_model(model_path: str = None):
-    """Lazy load Vosk model only once."""
-    global _MODEL
-    if _MODEL is not None:
+def _load_model(model_size: Optional[str] = None):
+    """Lazy load Whisper model and return it."""
+    global _MODEL, _MODEL_SIZE
+    if model_size is None:
+        model_size = DEFAULT_MODEL_SIZE
+
+    if _MODEL is not None and _MODEL_SIZE == model_size:
         return _MODEL
 
-    if model_path is None:
-        model_path = DEFAULT_MODEL_PATH
+    if whisper is None:
+        raise RuntimeError("whisper package not installed. Run: pip install openai-whisper")
 
-    if Model is None:
-        raise RuntimeError(
-            "vosk package not installed. Run: pip install vosk"
-        )
-
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Vosk model not found at {model_path}")
-
-    print(f"[STT] Loading Vosk model from '{model_path}'…")
-    _MODEL = Model(model_path)
-    print("[STT] Vosk model loaded.")
-    return _MODEL
+    print(f"[STT] Loading Whisper model '{model_size}' (this may take a while)...")
+    try:
+        _MODEL = whisper.load_model(model_size, device="cpu")
+        _MODEL_SIZE = model_size
+        print("[STT] Whisper model loaded.")
+        return _MODEL
+    except Exception as exc:
+        traceback.print_exc()
+        raise RuntimeError(f"Failed to load Whisper model '{model_size}': {exc}")
 
 
 def _clean_transcript(text: str) -> str:
+    """Simple cleaning for transcription text."""
     if not text:
         return ""
     return " ".join(text.strip().split())
@@ -62,34 +65,31 @@ def _clean_transcript(text: str) -> str:
 # -------------------------
 #   Public API
 # -------------------------
-def audio_to_text(audio_path: str) -> str:
-    """Transcribe a stored WAV audio file using Vosk."""
+def audio_to_text(audio_path: str, model_size: Optional[str] = None, language: Optional[str] = None) -> str:
+    """
+    Transcribe audio file to text using Whisper.
+
+    Args:
+        audio_path: Path to audio file (wav, mp3, m4a, etc).
+        model_size: Optional override of model size ("tiny","small",...).
+        language: Optional ISO code or hint (e.g. "en", "ig", "yo", "ha").
+
+    Returns:
+        Cleaned transcript string.
+    """
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    model = _load_model()
+    model = _load_model(model_size)
 
     try:
-        wf = wave.open(audio_path, "rb")
-        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-            raise ValueError("Audio file must be WAV PCM mono 16-bit")
+        options = {"task": "transcribe"}
+        if language:
+            options["language"] = language
 
-        rec = KaldiRecognizer(model, wf.getframerate())
-        result_text = []
-
-        while True:
-            data = wf.readframes(4000)
-            if len(data) == 0:
-                break
-            if rec.AcceptWaveform(data):
-                res = json.loads(rec.Result())
-                result_text.append(res.get("text", ""))
-
-        final_res = json.loads(rec.FinalResult())
-        result_text.append(final_res.get("text", ""))
-
-        text = " ".join(filter(None, result_text))
-        text = _clean_transcript(text)
+        print(f"[STT] Transcribing {audio_path} with model {_MODEL_SIZE}...")
+        result = model.transcribe(audio_path, **options)
+        text = _clean_transcript(result.get("text", ""))
         print(f"[STT] Transcript: {text}")
         return text
 
@@ -109,6 +109,7 @@ class STTEngine:
     """
 
     def __init__(self):
+        # preload Whisper model
         _load_model()
 
     async def audio_to_text(self, audio_file: bytes) -> str:
