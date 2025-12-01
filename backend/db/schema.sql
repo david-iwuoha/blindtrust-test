@@ -1,57 +1,38 @@
--- backend/db/schema.sql
-
-PRAGMA foreign_keys = ON;
-
--- USERS
+-- Users table
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    phone TEXT,
+    name TEXT NOT NULL,
     gender TEXT,
-    language TEXT DEFAULT 'en-NG',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    phone TEXT,
+    preferred_language TEXT DEFAULT 'english'
 );
 
--- ACCOUNTS
+-- Accounts table
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    balance INTEGER NOT NULL DEFAULT 0, -- store in kobo/lowest unit or naira as integer
-    currency TEXT NOT NULL DEFAULT 'NGN',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    balance REAL DEFAULT 10000,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- BENEFICIARIES
+-- Beneficiaries table
 CREATE TABLE IF NOT EXISTS beneficiaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    alias TEXT,
-    account_ref TEXT, -- demo account reference
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    beneficiary_name TEXT NOT NULL,
+    beneficiary_account_id INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (beneficiary_account_id) REFERENCES accounts(id)
 );
 
--- TRANSACTIONS
+-- Transactions table
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tx_type TEXT NOT NULL, -- debit | credit
-    from_account INTEGER,
-    to_account INTEGER,
-    amount INTEGER NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'NGN',
-    status TEXT NOT NULL DEFAULT 'completed',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (from_account) REFERENCES accounts(id),
-    FOREIGN KEY (to_account) REFERENCES accounts(id)
-);
-
--- AUDIT LOGS
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    action TEXT,
-    details TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    from_account_id INTEGER,
+    to_account_id INTEGER,
+    amount REAL NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL,
+    FOREIGN KEY (from_account_id) REFERENCES accounts(id),
+    FOREIGN KEY (to_account_id) REFERENCES accounts(id)
 );

@@ -1,119 +1,111 @@
 # backend/ai/pipeline.py
 
 """
-Full AI pipeline: STT → Intent → LLM → TTS.
+Full AI pipeline for BlindTrust:
+1. Audio → Text (STT)
+2. Intent Extraction (NLU)
+3. Generate Response (dummy logic for now)
+4. Text → Audio (TTS)
 """
 
 import asyncio
-from .stt import STTEngine
-from .intents import parse_intent
-from .llm import generate_response
-from .tts import _tts_engine
-from .responses import get_template_response
+from backend.ai.stt import STTEngine, audio_to_text
+from backend.ai.intents import IntentParser
+from backend.ai.tts import _tts_engine, text_to_speech
+
+# ---------------------------
+# NLU / Intent Extraction
+# ---------------------------
+intent_parser = IntentParser()
+
+def run_nlu(text: str) -> dict:
+    """
+    Run NLU to extract intent and slots from text.
+    Returns dict with keys:
+        - intent
+        - slots
+    """
+    result = intent_parser.parse(text)
+    return {"intent": result.intent, "entities": result.slots}
 
 
-# --- Updated parse_intent to handle all demo intents ---
-def parse_intent(text: str):
-    slots = {}
-    text_lower = text.lower()
+# ---------------------------
+# Main Pipeline
+# ---------------------------
+async def process_audio(input_audio: str, language: str = "english") -> dict:
+    """
+    Process audio end-to-end:
+    1. STT
+    2. NLU / Intent
+    3. Dummy response logic
+    4. TTS
+    """
 
-    if "transfer" in text_lower:
-        intent = "transfer"
-        # crude slot extraction
-        words = text.split()
-        try:
-            amount_index = words.index("transfer") + 1
-            to_index = words.index("to")
-            slots["amount"] = int(words[amount_index])
-            slots["recipient"] = words[to_index + 1]
-        except (ValueError, IndexError):
-            slots["amount"] = 0
-            slots["recipient"] = ""
-    elif "set language" in text_lower:
-        intent = "set_language"
-        slots["language"] = words[-1].lower()
-    elif "my name is" in text_lower:
-        intent = "provide_name"
-        slots["user_name"] = words[-1]
-    elif "my gender is" in text_lower:
-        intent = "provide_gender"
-        slots["gender"] = words[-1]
-    elif "my phone is" in text_lower:
-        intent = "provide_phone"
-        slots["phone"] = words[-1]
-    elif "confirm" in text_lower:
-        intent = "confirm"
-    elif "cancel" in text_lower:
-        intent = "cancel"
+    # Step 1: Convert audio to text
+    if input_audio.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+        # Treat as actual audio file
+        stt_engine = STTEngine()
+        transcript = await stt_engine.audio_to_text(open(input_audio, "rb").read())
     else:
-        intent = "onboarding"
+        # Already text (for testing)
+        transcript = input_audio
 
-    return intent, slots
+    # Step 2: Detect intent
+    nlu_result = run_nlu(transcript)
+    intent = nlu_result.get("intent", "unknown")
+    entities = nlu_result.get("entities", {})
 
+    # Step 3: Dummy bank logic / response templates
+    if intent == "check_balance":
+        bot_response = "Your account balance is ten thousand naira."
+    elif intent == "send_money" or intent == "transfer":
+        amount = entities.get("amount", "an unknown amount")
+        receiver = entities.get("recipient", "the user")
+        bot_response = f"Sending {amount} to {receiver} is not yet enabled in this demo."
+    elif intent == "greeting":
+        bot_response = "Hello! How can I assist you today?"
+    elif intent == "set_language":
+        bot_response = f"Language set to {entities.get('language', 'English')}."
+    elif intent == "provide_name":
+        bot_response = f"Hello {entities.get('user_name', 'user')}!"
+    elif intent == "provide_gender":
+        bot_response = f"Gender {entities.get('gender', 'unspecified')} recorded."
+    elif intent == "provide_phone":
+        bot_response = f"Phone {entities.get('phone', 'unspecified')} recorded."
+    elif intent == "confirm":
+        bot_response = "Action confirmed."
+    elif intent == "cancel":
+        bot_response = "Operation canceled."
+    else:
+        bot_response = "Sorry, I did not understand your request."
 
-# --- Updated generate_response to return templates for demo intents ---
-def generate_response(context, intent, slots):
-    templates = {
-        "onboarding": "Welcome to BlindTrust. Please tell me your name.",
-        "set_language": f"Language set to {slots.get('language', 'English')}.",
-        "provide_name": f"Hello {slots.get('user_name', 'user')}!",
-        "provide_gender": f"Gender {slots.get('gender', 'unspecified')} recorded.",
-        "provide_phone": f"Phone {slots.get('phone', 'unspecified')} recorded.",
-        "transfer": f"Transfer of {slots.get('amount', 0)} to {slots.get('recipient', 'unknown')} successful.",
-        "confirm": "Action confirmed.",
-        "cancel": "Operation canceled."
-    }
-    return templates.get(intent)
-
-
-async def process_audio(input_audio: str):
-    """
-    Main AI engine for BlindTrust.
-    For now, input_audio is actually text (we'll replace with audio later).
-
-    Returns a dict:
-    {
-        "text": "Processed text",
-        "intent": "detected_intent",
-        "slots": { ... },
-        "response_text": "Generated response",
-        "audio_file": "output.mp3"
-    }
-    """
-    # --- Step 1: Convert audio to text ---
-    stt_engine = STTEngine()
-    text = input_audio  # placeholder: already text
-
-    # --- Step 2: Detect intent and extract slots ---
-    intent, slots = parse_intent(text)
-
-    # --- Step 3: Generate response text ---
-    response_text = generate_response(context=text, intent=intent, slots=slots)
-    if not response_text:
-        response_text = get_template_response(intent, slots)
-
-    # --- Step 4: Convert text to speech (await async TTS) ---
-    audio_file = await _tts_engine.text_to_speech(
-        response_text, language_code=slots.get("language", "en")
+    # Step 4: Convert response text to speech
+    response_audio_path = await _tts_engine.text_to_speech(
+        bot_response, language_code=entities.get("language", language)
     )
 
     return {
-        "text": text,
+        "transcript": transcript,
         "intent": intent,
-        "slots": slots,
-        "response_text": response_text,
-        "audio_file": audio_file
+        "entities": entities,
+        "response_text": bot_response,
+        "response_audio_path": response_audio_path
     }
 
 
-def process_audio_sync(input_audio: str):
+# ---------------------------
+# Sync Wrapper
+# ---------------------------
+def process_audio_sync(input_audio: str, language: str = "english") -> dict:
     """
-    Sync wrapper for the async process_audio function.
-    Useful for FastAPI endpoints.
+    Synchronous wrapper for FastAPI endpoints.
     """
-    return asyncio.run(process_audio(input_audio))
+    return asyncio.run(process_audio(input_audio, language))
 
 
+# ---------------------------
+# Object-oriented pipeline
+# ---------------------------
 class AIPipeline:
     """
     Object-oriented wrapper for BlindTrust AI engine.
@@ -121,27 +113,56 @@ class AIPipeline:
 
     def __init__(self):
         self.stt_engine = STTEngine()
-        # Future: self.llm, self.tts, self.intent_parser, etc.
+        self.intent_parser = IntentParser()
 
-    async def process(self, input_audio: str) -> dict:
-        text = input_audio  # placeholder
-        intent, slots = parse_intent(text)
+    async def process(self, input_audio: str, language: str = "english") -> dict:
+        # Step 1: STT
+        if input_audio.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+            transcript = await self.stt_engine.audio_to_text(open(input_audio, "rb").read())
+        else:
+            transcript = input_audio
 
-        response_text = generate_response(context=text, intent=intent, slots=slots)
-        if not response_text:
-            response_text = get_template_response(intent, slots)
+        # Step 2: Intent extraction
+        nlu_result = run_nlu(transcript)
+        intent = nlu_result.get("intent", "unknown")
+        entities = nlu_result.get("entities", {})
 
-        audio_file = await _tts_engine.text_to_speech(
-            response_text, language_code=slots.get("language", "en")
+        # Step 3: Dummy response
+        if intent == "check_balance":
+            bot_response = "Your account balance is ten thousand naira."
+        elif intent == "send_money" or intent == "transfer":
+            amount = entities.get("amount", "an unknown amount")
+            receiver = entities.get("recipient", "the user")
+            bot_response = f"Sending {amount} to {receiver} is not yet enabled in this demo."
+        elif intent == "greeting":
+            bot_response = "Hello! How can I assist you today?"
+        elif intent == "set_language":
+            bot_response = f"Language set to {entities.get('language', 'English')}."
+        elif intent == "provide_name":
+            bot_response = f"Hello {entities.get('user_name', 'user')}!"
+        elif intent == "provide_gender":
+            bot_response = f"Gender {entities.get('gender', 'unspecified')} recorded."
+        elif intent == "provide_phone":
+            bot_response = f"Phone {entities.get('phone', 'unspecified')} recorded."
+        elif intent == "confirm":
+            bot_response = "Action confirmed."
+        elif intent == "cancel":
+            bot_response = "Operation canceled."
+        else:
+            bot_response = "Sorry, I did not understand your request."
+
+        # Step 4: TTS
+        response_audio_path = await _tts_engine.text_to_speech(
+            bot_response, language_code=entities.get("language", language)
         )
 
         return {
-            "text": text,
+            "transcript": transcript,
             "intent": intent,
-            "slots": slots,
-            "response_text": response_text,
-            "audio_file": audio_file
+            "entities": entities,
+            "response_text": bot_response,
+            "response_audio_path": response_audio_path
         }
 
-    def process_sync(self, input_audio: str) -> dict:
-        return asyncio.run(self.process(input_audio))
+    def process_sync(self, input_audio: str, language: str = "english") -> dict:
+        return asyncio.run(self.process(input_audio, language))

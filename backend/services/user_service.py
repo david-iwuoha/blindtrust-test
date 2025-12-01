@@ -1,5 +1,5 @@
 # backend/services/user_service.py
-from backend.db.crud_users import create_user, get_user_by_username, update_user_language, update_profile
+from backend.db.helpers import get_connection, get_user_by_name 
 
 def onboard_user(username: str, phone: str = None, gender: str = None, language: str = "en-NG"):
     user = get_user_by_username(username)

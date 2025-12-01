@@ -1,24 +1,62 @@
 # backend/db/seed.py
-from .crud_users import create_user, get_user_by_username
-from .crud_beneficiaries import add_beneficiary
-from .connection import get_db_conn, init_db_from_schema
+from .helpers import get_connection, add_beneficiary, get_user_by_name
+
+def init_db_from_schema():
+    """Initialize DB from schema.sql"""
+    import os
+    schema_file = "backend/db/schema.sql"
+    if not os.path.exists("backend/db/blindtrust_demo.db"):
+        conn = get_connection()
+        with open(schema_file, "r") as f:
+            conn.executescript(f.read())
+        conn.commit()
+        conn.close()
+
+# --- Demo user creation ---
+def create_user(name, gender, phone, language="english"):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO users (name, gender, phone, preferred_language) VALUES (?, ?, ?, ?)",
+        (name, gender, phone, language)
+    )
+    conn.commit()
+    user_id = cursor.lastrowid
+    conn.close()
+    return user_id
+
+def create_account_for_user(name):
+    user = get_user_by_name(name)
+    if not user:
+        raise ValueError(f"User {name} not found")
+    user_id = user[0]
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO accounts (user_id, balance) VALUES (?, ?)", (user_id, 10000))
+    conn.commit()
+    account_id = cursor.lastrowid
+    conn.close()
+    return account_id
 
 def seed_demo():
+    """Seed demo users, accounts, and beneficiaries"""
+    # Initialize DB
     init_db_from_schema()
 
-    # create demo user
-    demo_username = "demo_user"
-    demo = get_user_by_username(demo_username)
-    if not demo:
-        demo = create_user(username=demo_username, phone="08000000000", gender="unknown", language="en-NG")
+    # Users
+    alice_id = create_user("Alice", "female", "08011111111", "english")
+    john_id = create_user("John", "male", "08022222222", "english")
 
-    # create recipient users
-    for uname in ["demo-acc-john", "demo-acc-mary"]:
-        if not get_user_by_username(uname):
-            create_user(username=uname)
+    # Accounts
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO accounts (user_id, balance) VALUES (?, ?)", (alice_id, 10000))
+    alice_acc_id = cursor.lastrowid
+    cursor.execute("INSERT INTO accounts (user_id, balance) VALUES (?, ?)", (john_id, 10000))
+    john_acc_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
 
-    # add beneficiaries to demo_user
-    add_beneficiary(demo["id"], "john", alias="John Doe", account_ref="demo-acc-john")
-    add_beneficiary(demo["id"], "mary", alias="Mary Jane", account_ref="demo-acc-mary")
-
-    return demo
+    # Beneficiaries
+    add_beneficiary(alice_id, "John", john_acc_id)
+    add_beneficiary(john_id, "Alice", alice_acc_id)

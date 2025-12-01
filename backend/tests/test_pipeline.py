@@ -1,20 +1,18 @@
-import pytest
-from backend.ai.pipeline import process_audio
+# backend/tests/test_pipeline.py
 
-@pytest.mark.anyio
-async def test_pipeline_skeleton():
-    # Placeholder audio/text
-    dummy_audio = "I want to transfer 2000 to John"
+from backend.ai.pipeline import process_audio_sync
 
-    # Run the async pipeline directly
-    result = await process_audio(dummy_audio)
+def test_transfer_text():
+    # Step 1: Input text
+    text_input = "Transfer 2000 to John"
 
-    print("Input Text:", result["text"])
-    print("Detected Intent:", result["intent"])
-    print("Response Text:", result["response_text"])
-    print("Generated Audio File:", result["audio_file"])
+    # Step 2: Process through the pipeline
+    result = process_audio_sync(text_input)
 
-# Run directly outside pytest
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(test_pipeline_skeleton())
+    # Step 3: Print result for inspection
+    print("Pipeline output:", result)
+
+    # Step 4: Assertions (checks automatically)
+    assert result["intent"] == "transfer"
+    assert result["entities"].get("amount") == 2000
+    assert result["entities"].get("recipient") == "John"

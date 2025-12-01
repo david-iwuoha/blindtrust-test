@@ -17,6 +17,7 @@ import os
 import tempfile
 import traceback
 from typing import Optional
+import re
 
 # Whisper is CPU-friendly but models still take RAM/disk.
 try:
@@ -25,9 +26,16 @@ except ImportError:
     whisper = None
 
 # ---- Config ----
-DEFAULT_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")  # "tiny" | "small" | "base" | ...
+DEFAULT_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")  # switch tiny -> small for better accuracy
 _MODEL = None
 _MODEL_SIZE = None
+
+# Minor fuzzy corrections for common mishears
+FUZZY_CORRECTIONS = {
+    r"\btransfah\b": "transfer",
+    r"\bsend\b": "transfer",
+    r"\bbalanc\b": "balance",
+}
 
 # -------------------------
 #   Internal helpers
@@ -56,11 +64,14 @@ def _load_model(model_size: Optional[str] = None):
 
 
 def _clean_transcript(text: str) -> str:
-    """Simple cleaning for transcription text."""
+    """Simple cleaning for transcription text with fuzzy corrections."""
     if not text:
         return ""
-    return " ".join(text.strip().split())
-
+    text = " ".join(text.strip().split())
+    # apply fuzzy corrections
+    for pattern, replacement in FUZZY_CORRECTIONS.items():
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
 
 # -------------------------
 #   Public API
@@ -97,7 +108,6 @@ def audio_to_text(audio_path: str, model_size: Optional[str] = None, language: O
         traceback.print_exc()
         print(f"[STT] Error during transcription: {e}")
         return ""
-
 
 # --------------------------------------------------
 #  Backward-compatible class for older architecture

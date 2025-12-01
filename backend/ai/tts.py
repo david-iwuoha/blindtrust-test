@@ -1,10 +1,9 @@
 # backend/ai/tts.py
 
 import os
-import uuid
 import requests
-from datetime import datetime
 import asyncio
+from datetime import datetime
 
 # YarnGPT API key
 YARN_API_KEY = "sk_live_-qoDWaPguo1ZFR47dUX-Jygei8RHo7lF0FV5VGAUauQ"
@@ -17,6 +16,10 @@ LANGUAGE_VOICES = {
     "yoruba": "Adaora",
     "hausa": "Zainab"
 }
+
+# Dedicated folder for live/demo TTS outputs
+AUDIO_OUTPUT_DIR = "backend/audio_outputs"
+os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
 
 
 class TTSEngine:
@@ -50,7 +53,7 @@ class TTSEngine:
 
         loop = asyncio.get_event_loop()
         try:
-            # Run blocking requests.post in executor to avoid blocking event loop
+            # Run blocking requests.post in executor
             response = await loop.run_in_executor(
                 None,
                 lambda: requests.post(YARN_TTS_URL, headers=headers, json=payload)
@@ -63,9 +66,9 @@ class TTSEngine:
             print(f"[TTS] API error: {response.status_code} - {response.text}")
             return ""
 
-        # Save audio to a timestamped file
+        # Save audio to dedicated folder with timestamped filename
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        filename = f"output_{timestamp}.{output_format}"
+        filename = os.path.join(AUDIO_OUTPUT_DIR, f"output_{timestamp}.{output_format}")
         try:
             with open(filename, "wb") as f:
                 f.write(response.content)
