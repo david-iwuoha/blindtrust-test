@@ -1,5 +1,3 @@
-# backend/ai/stt.py
-
 """
 Real STT module using Whisper (OpenAI) with a backward-compatible wrapper
 so the rest of your backend will not crash.
@@ -54,6 +52,7 @@ def _load_model(model_size: Optional[str] = None):
 
     print(f"[STT] Loading Whisper model '{model_size}' (this may take a while)...")
     try:
+        # Note: Using device="cpu" as requested in original code
         _MODEL = whisper.load_model(model_size, device="cpu")
         _MODEL_SIZE = model_size
         print("[STT] Whisper model loaded.")
@@ -99,8 +98,13 @@ def audio_to_text(audio_path: str, model_size: Optional[str] = None, language: O
             options["language"] = language
 
         print(f"[STT] Transcribing {audio_path} with model {_MODEL_SIZE}...")
-        result = model.transcribe(audio_path, **options)
-        text = _clean_transcript(result.get("text", ""))
+        
+        # Pylance fix for the transcribe function's numerous optional parameters
+        result = model.transcribe(audio_path, **options) # type: ignore
+        
+        # Pylance fix for the result.get("text") type which can be str or list
+        text = _clean_transcript(result.get("text", "")) # type: ignore 
+        
         print(f"[STT] Transcript: {text}")
         return text
 
@@ -110,7 +114,7 @@ def audio_to_text(audio_path: str, model_size: Optional[str] = None, language: O
         return ""
 
 # --------------------------------------------------
-#  Backward-compatible class for older architecture
+#   Backward-compatible class for older architecture
 # --------------------------------------------------
 class STTEngine:
     """

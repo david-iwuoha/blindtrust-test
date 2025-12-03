@@ -5,7 +5,9 @@ DB_PATH = "backend/db/blindtrust_demo.db"
 
 # --- Basic connection helper ---
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row   # allow dict-like row access
+    return conn
 
 # --- User queries ---
 def get_user_by_name(name: str):
@@ -30,7 +32,10 @@ def get_account_by_user_id(user_id: int):
 def update_balance(account_id: int, amount: float):
     with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", (amount, account_id))
+        cursor.execute(
+            "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+            (amount, account_id)
+        )
         conn.commit()
 
 def get_balance(account_id: int):
@@ -38,7 +43,7 @@ def get_balance(account_id: int):
         cursor = conn.cursor()
         cursor.execute("SELECT balance FROM accounts WHERE id = ?", (account_id,))
         row = cursor.fetchone()
-        return row[0] if row else None
+        return row["balance"] if row else None
 
 # --- Beneficiaries ---
 def add_beneficiary(user_id: int, beneficiary_name: str, beneficiary_account_id: int):
@@ -53,7 +58,10 @@ def add_beneficiary(user_id: int, beneficiary_name: str, beneficiary_account_id:
 def get_beneficiaries(user_id: int):
     with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT beneficiary_name, beneficiary_account_id FROM beneficiaries WHERE user_id = ?", (user_id,))
+        cursor.execute(
+            "SELECT beneficiary_name, beneficiary_account_id FROM beneficiaries WHERE user_id = ?",
+            (user_id,)
+        )
         return cursor.fetchall()
 
 # --- Transactions ---
@@ -68,22 +76,41 @@ def log_transaction(from_account_id: int, to_account_id: int, amount: float, sta
 
 # --- Transfer helper ---
 def transfer(from_account_id: int, to_account_id: int, amount: float):
+    # reject invalid amounts
+    if amount <= 0:
+        return False, "Invalid transfer amount"
+
     with closing(get_connection()) as conn:
         try:
             cursor = conn.cursor()
+
             cursor.execute("SELECT balance FROM accounts WHERE id = ?", (from_account_id,))
-            from_balance = cursor.fetchone()[0]
+            row = cursor.fetchone()
+
+            if not row:
+                return False, "Source account not found"
+
+            from_balance = row["balance"]
+
             if from_balance < amount:
                 return False, f"Insufficient funds. Balance = {from_balance}"
 
-            cursor.execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", (amount, from_account_id))
-            cursor.execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", (amount, to_account_id))
+            cursor.execute(
+                "UPDATE accounts SET balance = balance - ? WHERE id = ?",
+                (amount, from_account_id)
+            )
+            cursor.execute(
+                "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+                (amount, to_account_id)
+            )
             cursor.execute(
                 "INSERT INTO transactions (from_account_id, to_account_id, amount, status) VALUES (?, ?, ?, ?)",
                 (from_account_id, to_account_id, amount, "success")
             )
+
             conn.commit()
             return True, "Transfer successful"
+
         except Exception as e:
             conn.rollback()
             return False, str(e)
